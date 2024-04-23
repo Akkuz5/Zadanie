@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Список контактов</title>
+    <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+
+<div class="sticky-header">
+    <h2>Список контактов</h2>
+    <div class="buttons-container">
+        <button class="addButton">Добавить</button>
+        <button class="editButton" id="editButton" disabled>Редактировать</button>
+        <button class="deleteButton" id="deleteButton" disabled>Удалить</button>
+    </div>
+</div>
+    
+<table id="contactTable">
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>Имя</th>
+            <th>Номер телефона</th>
+        </tr>
+    </thead>
+    <tbody>
+    </tbody>
+</table>
+
+<!-- Модальное окно для добавления/редактирования записей -->
+<div id="modal" class="modal" style="display:none;">
+    <div class="modal-content">
+        <span class="close-button" onclick="closeModal()">&times;</span>
+        <h2 id="formTitle">Добавить контакт</h2>
+        <form id="addEditForm">
+            <input type="hidden" id="id" name="id">
+            <label for="name">Имя:</label>
+            <input type="text" id="name" name="name" required><br><br>
+            <label for="phone_number">Номер телефона:</label>
+            <input type="text" id="phone" name="phone_number" required><br><br>
+            <button type="submit">Сохранить</button>
+        </form>
+    </div>
+</div>
+
+<script>
+let selectedRows = [];
+
+document.getElementById('contactTable').addEventListener('click', function(e) {
+    if (e.target.tagName === 'TD') {
+        const currentRow = e.target.parentNode;
+        const rowIndex = selectedRows.indexOf(currentRow);
+        
+        if (rowIndex > -1) {
+            selectedRows.splice(rowIndex, 1);
+            currentRow.classList.remove('selectedRow');
+        } else {
+            selectedRows.push(currentRow);
+            currentRow.classList.add('selectedRow');
+        }
+    }
+
+    // Обновляем состояние кнопок
+    document.getElementById('editButton').disabled = selectedRows.length !== 1;
+    document.getElementById('deleteButton').disabled = selectedRows.length === 0;
+    document.getElementById('printButton').disabled = selectedRows.length === 0;
+});
+
+document.getElementById('deleteButton').addEventListener('click', function() {
+    if (selectedRows.length > 0 && confirm('Вы уверены, что хотите удалить выбранные записи?')) {
+        const ids = selectedRows.map(row => row.children[0].textContent); // Собираем ID выделенных записей
+        deleteContact(ids.join(',')); // Преобразуем массив в строку, разделенную запятыми
+    }
+});
+
+function deleteContact(ids) {
+    const formData = new FormData();
+    formData.append('ids', ids); // Отправляем строку с ID
+    formData.append('action', 'deleteMultipleContacts'); // Действие для множественного удаления
+
+    fetch('../DAO/contact_DAO.php', { 
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert('Выбранные записи успешно удалены.');
+            loadContactList();
+        }
+        if (data.errors) {
+            data.errors.forEach(error => {
+                alert(`Ошибка при удалении записи с ID ${error.id}: ${error.message}`);
+            });
+            loadContactList();
+        }
+    })
+    .catch(error => console.error('Ошибка при удалении:', error));
+}
+
+document.getElementById('editButton').addEventListener('click', function() {
+    if (selectedRows.length > 1) {
+        alert('Редактировать можно только одну запись.');
+        return;
+    }
+
+    if (selectedRows.length === 1) {
+        const id = selectedRows[0].children[0].textContent;
+        openModal();
+        fetch(`../DAO/contact_DAO.php?action=getContactById&id=${id}`) 
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById('id').value = data.id;
+                document.getElementById('name').value = data.name;
+                document.getElementById('phone').value = data.phone_number;
+                document.getElementById('formTitle').innerText = 'Редактировать контакт';
+            })
+            .catch(error => console.error('Ошибка:', error));
+    }
+});
+
+document.querySelector('.addButton').addEventListener('click', function() {
+    document.getElementById('id').value = ''; 
+    document.getElementById('name').value = '';
+    document.getElementById('phone').value = '';
+    document.getElementById('formTitle').innerText = 'Добавить контакт';
+    openModal();
+});
+
+function loadContactList() {
+    fetch('../DAO/contact_DAO.php?action=getAllContactsJson')
+    .then(response => response.json())
+    .then(data => {
+        const tableBody = document.getElementById('contactTable').getElementsByTagName('tbody')[0];
+        tableBody.innerHTML = ''; 
+        data.forEach(contact => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `<td>${contact.id}</td><td>${contact.name}</td><td>${contact.phone_number}</td>`;
+            tableBody.appendChild(tr);
+        });
+    })
+    .catch(error => console.error('Ошибка при загрузке списка контактов:', error));
+}
+
+function openModal() {
+    document.getElementById('modal').style.display = 'block';
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    const closeButton = document.querySelector('.close-button');
+    if (closeButton) {
+        closeButton.addEventListener('click', function() {
+            closeModal();
+        });
+    }
+});
+
+function closeModal() {
+    document.getElementById('modal').style.display = 'none';
+}
+
+document.getElementById('addEditForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    
+    const formData = new FormData(this);
+    formData.append('action', formData.get('id') ? 'updateContact' : 'addContact');
+    
+    fetch('../DAO/contact_DAO.php', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        alert(data.message);
+        if (data.success) {
+            closeModal(); 
+            loadContactList(); 
+        }
+    })
+    .catch(error => {
+        console.error('Ошибка:', error);
+        closeModal(); 
+    });
+});
+
+loadContactList();
+</script>
+
+</body>
+</html>
